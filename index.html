@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Letter Duel - Two Player Word Game</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container { max-width: 600px; width: 100%; margin: 0 auto; }
+        .panel {
+            background: rgba(255, 248, 235, 0.97);
+            border-radius: 48px;
+            padding: 32px 24px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+        h1 { font-size: 2rem; color: #2d3748; margin-bottom: 8px; }
+        .subtitle { color: #4a5568; margin-bottom: 32px; }
+        input {
+            width: 100%;
+            padding: 14px;
+            font-size: 1.2rem;
+            border: 2px solid #c0a16b;
+            border-radius: 60px;
+            text-align: center;
+            margin: 10px 0;
+        }
+        button {
+            background: #3c6e47;
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 60px;
+            cursor: pointer;
+            margin: 8px;
+            transition: transform 0.1s;
+        }
+        button:active { transform: scale(0.97); }
+        button.secondary { background: #886e42; }
+        .letter-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+            margin: 20px 0;
+        }
+        .letter-btn {
+            background: #c7aa7c;
+            padding: 12px 0;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-radius: 40px;
+            cursor: pointer;
+            border: none;
+        }
+        .letter-btn.selected { background: #f3b33d; }
+        .your-letter {
+            font-size: 4rem;
+            background: #2c3e2f;
+            color: #f7d44a;
+            width: 120px;
+            height: 120px;
+            line-height: 120px;
+            border-radius: 60px;
+            margin: 15px auto;
+            font-family: monospace;
+        }
+        .timer { font-size: 2rem; font-weight: bold; color: #d9534f; margin: 15px 0; }
+        .status {
+            background: #1f2f2a;
+            padding: 12px;
+            border-radius: 40px;
+            color: #fbe6a2;
+            margin: 15px 0;
+        }
+        .scoreboard {
+            display: flex;
+            justify-content: space-between;
+            background: #0b2b26;
+            padding: 16px;
+            border-radius: 40px;
+            color: #f9e7c2;
+            margin-bottom: 20px;
+        }
+        .code-box {
+            background: #1a2a3a;
+            color: #ffd966;
+            font-size: 2rem;
+            padding: 15px;
+            border-radius: 20px;
+            margin: 15px 0;
+            font-family: monospace;
+        }
+        .hidden { display: none; }
+        .word-input {
+            width: 100%;
+            padding: 14px;
+            font-size: 1.1rem;
+            border-radius: 60px;
+            border: 2px solid #bf9a60;
+            text-align: center;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+<div class="container" id="app"></div>
+
+<script>
+    // Configuration - CHANGE THIS TO YOUR SERVER URL
+    const SERVER_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : 'https://your-server.onrender.com';
+    
+    let socket = null;
+    let myRole = null;
+    let gameCode = null;
+    let currentPhase = 'waiting';
+    let myLetter = null;
+    let currentFirst = null;
+    let currentSecond = null;
+    let timeLeft = 0;
+    let timerInterval = null;
+    let scoreA = 0, scoreB = 0;
+    let currentRound = 1;
+    
+    const app = document.getElementById('app');
+    
+    function render() {
+        if (!socket || !socket.connected) {
+            renderJoinScreen();
+        } else if (currentPhase === 'waiting_for_players') {
+            renderWaitingScreen();
+        } else {
+            renderGameScreen();
+        }
+    }
+    
+    function renderJoinScreen() {
+        app.innerHTML = `
+            <div class="panel">
+                <h1>⚔️ LETTER DUEL ⚔️</h1>
+                <p class="subtitle">Each player on their own device!</p>
+                <button id="createBtn">🎲 Create New Game</button>
+                <div style="margin: 15px 0;">OR</div>
+                <input type="text" id="joinCode" placeholder="Enter 6-digit code" maxlength="6" style="text-transform:uppercase">
+                <button id="joinBtn">🔗 Join Game</button>
+            </div>
+        `;
+        document.getElementById('createBtn')?.addEventListener('click', createGame);
+        document.getElementById('joinBtn')?.addEventListener('click', () => {
+            const code = document.getElementById('joinCode').value.trim().toUpperCase();
+            if (code.length === 6) joinGame(code);
+            else alert("Enter 6-digit code");
+        });
+    }
+    
+    function renderWaitingScreen() {
+        app.innerHTML = `
+            <div class="panel">
+                <h1>🎮 Game: ${gameCode}</h1>
+                <div class="code-box">${gameCode}</div>
+                <p>Share this code with your friend!</p>
+                <button id="copyBtn">📋 Copy Code</button>
+                <div class="status">⏳ Waiting for opponent... <span style="display:inline-block; width:16px; height:16px; border:2px solid #ffd966; border-top-color:transparent; border-radius:50%; animation: spin 0.6s linear infinite; margin-left:8px;"></span></div>
+                <button id="cancelBtn" class="secondary">Cancel</button>
+            </div>
+            <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+        `;
+        document.getElementById('copyBtn')?.addEventListener('click', () => {
+            navigator.clipboard.writeText(gameCode);
+            alert("Code copied!");
+        });
+        document.getElementById('cancelBtn')?.addEventListener('click', () => {
+            socket.disconnect();
+            socket = null;
+            render();
+        });
+    }
+    
+    function renderGameScreen() {
+        const isPicking = currentPhase === 'picking';
+        const isDuel = currentPhase === 'duel';
+        const isFinished = currentPhase === 'finished';
+        
+        app.innerHTML = `
+            <div class="panel">
+                <div class="scoreboard">
+                    <span>🎭 YOU: <strong>${myRole === 'A' ? scoreA : scoreB}</strong></span>
+                    <span>⚔️ ROUND ${currentRound}/15</span>
+                    <span>👥 OPPONENT: <strong>${myRole === 'A' ? scoreB : scoreA}</strong></span>
+                </div>
+                
+                <div class="your-letter">${myLetter || '?'}</div>
+                
+                ${isPicking ? `
+                    <div class="status">🔐 Pick a letter secretly! (3 seconds)</div>
+                    <div class="letter-grid" id="letterGrid"></div>
+                ` : ''}
+                
+                ${isDuel ? `
+                    <div class="timer" id="timer">⏳ ${timeLeft}s</div>
+                    <div class="status">🎯 Word must start with <strong>${currentFirst}</strong> and end with <strong>${currentSecond}</strong></div>
+                    <input type="text" class="word-input" id="wordInput" placeholder="Type a valid English word..." autocomplete="off">
+                    <button id="submitBtn">⚡ SUBMIT WORD</button>
+                ` : ''}
+                
+                ${isFinished ? `<div class="status">Round finished! Next round starting...</div>` : ''}
+                
+                <div class="status" id="gameStatus">${getStatusText()}</div>
+            </div>
+        `;
+        
+        if (isPicking && !myLetter) {
+            const grid = document.getElementById('letterGrid');
+            if (grid) {
+                'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(letter => {
+                    const btn = document.createElement('button');
+                    btn.textContent = letter;
+                    btn.classList.add('letter-btn');
+                    btn.onclick = () => pickLetter(letter);
+                    grid.appendChild(btn);
+                });
+            }
+        }
+        
+        document.getElementById('submitBtn')?.addEventListener('click', () => {
+            const input = document.getElementById('wordInput');
+            if (input) submitWord(input.value);
+        });
+    }
+    
+    function getStatusText() {
+        if (currentPhase === 'picking') return myLetter ? "✅ Letter locked! Waiting for opponent..." : "🔒 Choose your letter...";
+        if (currentPhase === 'duel') return "⚔️ First to type a valid word wins!";
+        if (currentPhase === 'finished') return "Round complete...";
+        return "Waiting...";
+    }
+    
+    function createGame() {
+        socket = io(SERVER_URL);
+        socket.on('connect', () => {
+            socket.emit('create_game');
+        });
+        setupSocketListeners();
+    }
+    
+    function joinGame(code) {
+        socket = io(SERVER_URL);
+        socket.on('connect', () => {
+            socket.emit('join_game', code);
+        });
+        setupSocketListeners();
+    }
+    
+    function setupSocketListeners() {
+        socket.on('game_created', ({ gameCode, role }) => {
+            gameCode = gameCode;
+            myRole = role;
+            currentPhase = 'waiting_for_players';
+            render();
+        });
+        
+        socket.on('game_joined', ({ gameCode, role, gameState }) => {
+            gameCode = gameCode;
+            myRole = role;
+            currentPhase = 'waiting_for_players';
+            render();
+        });
+        
+        socket.on('game_start', (state) => {
+            currentPhase = 'waiting';
+            render();
+        });
+        
+        socket.on('round_start', ({ round, phase, timeLeft }) => {
+            currentRound = round;
+            currentPhase = phase;
+            myLetter = null;
+            currentFirst = null;
+            currentSecond = null;
+            if (timerInterval) clearInterval(timerInterval);
+            render();
+            
+            // Auto timeout for picking
+            setTimeout(() => {
+                if (currentPhase === 'picking' && !myLetter) {
+                    // Auto pick random letter
+                    const randomLetter = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(Math.random() * 26)];
+                    pickLetter(randomLetter);
+                }
+            }, 3000);
+        });
+        
+        socket.on('duel_start', ({ firstLetter, secondLetter, timeLeft: tLeft }) => {
+            currentPhase = 'duel';
+            currentFirst = firstLetter;
+            currentSecond = secondLetter;
+            timeLeft = tLeft;
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (currentPhase === 'duel' && timeLeft > 0) {
+                    timeLeft--;
+                    const timerEl = document.getElementById('timer');
+                    if (timerEl) timerEl.innerText = `⏳ ${timeLeft}s`;
+                    if (timeLeft <= 0) {
+                        clearInterval(timerInterval);
+                    }
+                }
+            }, 1000);
+            render();
+        });
+        
+        socket.on('letter_confirmed', ({ letter }) => {
+            myLetter = letter;
+            render();
+        });
+        
+        socket.on('round_winner', ({ winner, word, scoreA: sA, scoreB: sB }) => {
+            scoreA = sA;
+            scoreB = sB;
+            currentPhase = 'finished';
+            if (timerInterval) clearInterval(timerInterval);
+            render();
+            const msg = winner === myRole ? "🎉 YOU WON THE ROUND! 🎉" : "😔 Opponent won the round";
+            const statusDiv = document.getElementById('gameStatus');
+            if (statusDiv) statusDiv.innerHTML = `${msg} Word: "${word}"`;
+        });
+        
+        socket.on('timeout', () => {
+            currentPhase = 'finished';
+            if (timerInterval) clearInterval(timerInterval);
+            render();
+            const statusDiv = document.getElementById('gameStatus');
+            if (statusDiv) statusDiv.innerHTML = "⏰ Time's up! No winner this round.";
+        });
+        
+        socket.on('game_over', ({ scoreA: sA, scoreB: sB }) => {
+            const winner = sA > sB ? "A" : (sB > sA ? "B" : "Tie");
+            alert(`GAME OVER! Final Score: ${sA} - ${sB}. Winner: ${winner === myRole ? "YOU!" : "Opponent"}`);
+            socket.disconnect();
+            socket = null;
+            render();
+        });
+        
+        socket.on('opponent_disconnected', () => {
+            alert("Opponent disconnected! Game will reset.");
+            socket.disconnect();
+            socket = null;
+            render();
+        });
+        
+        socket.on('error', (msg) => {
+            alert(msg);
+            socket.disconnect();
+            socket = null;
+            render();
+        });
+        
+        socket.on('invalid_word', ({ reason }) => {
+            alert(reason);
+        });
+    }
+    
+    function pickLetter(letter) {
+        if (currentPhase !== 'picking' || myLetter) return;
+        socket.emit('pick_letter', { gameCode, letter });
+    }
+    
+    function submitWord(word) {
+        if (currentPhase !== 'duel') return;
+        if (!word.trim()) return;
+        socket.emit('submit_word', { gameCode, word: word.trim() });
+    }
+    
+    render();
+</script>
+</body>
+</html>
