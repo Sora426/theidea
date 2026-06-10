@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Letter Duel</title>
+
+<style>
+body { font-family: Arial; text-align: center; margin-top: 40px; }
+button { margin: 4px; padding: 8px; }
+#pair { font-size: 30px; margin: 20px; }
+</style>
+</head>
+
+<body>
+
+<h1>Letter Duel</h1>
+
+<button id="createBtn">Create Room</button>
+<input id="roomInput" placeholder="Room ID">
+<button id="joinBtn">Join Room</button>
+
+<h3 id="room"></h3>
+
+<div id="letters"></div>
+
+<h2 id="pair">---</h2>
+
+<input id="wordInput" placeholder="Enter word">
+<button id="submitWord">Submit</button>
+
+<h3 id="status"></h3>
+<h3 id="score"></h3>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="script.js"></script>
+
+</body>
+</html>
