@@ -5,8 +5,10 @@ const cors = require('cors');
 
 const app = express();
 
+app.use(express.static("public"));
+
 app.get("/", (req, res) => {
-    res.send("Letter Duel is running!");
+    res.sendFile(__dirname + "/public/index.html");
 });
 const server = http.createServer(app);
 const io = new Server(server, {
