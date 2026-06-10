@@ -4,6 +4,10 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 
 const app = express();
+
+app.get("/", (req, res) => {
+    res.send("Letter Duel is running!");
+});
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
