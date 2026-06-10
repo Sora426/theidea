@@ -5,10 +5,10 @@ const cors = require('cors');
 
 const app = express();
 
-app.use(express.static("public"));
+app.use(express.static(__dirname));
 
 app.get("/", (req, res) => {
-    res.sendFile(__dirname + "/public/index.html");
+    res.sendFile(path.join(__dirname, "index.html"));
 });
 const server = http.createServer(app);
 const io = new Server(server, {
